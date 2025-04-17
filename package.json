@@ -2,7 +2,7 @@
   "name": "dory-notes",
   "publisher": "victor-luna",
   "displayName": "Dory Notes",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A minimalist and versioned notes application for programmers.",
   "author": "Victor Luna <victor.luna.mullisaca@gmail.com>",
   "license": "MIT",
@@ -34,16 +34,42 @@
       {
         "command": "dory-notes.refresh",
         "title": "Refresh",
-        "icon": "res/refresh-circle.svg"
+        "icon": "$(refresh)"
       },
       {
         "command": "dory-notes.openNote",
-        "title": "Open Note"
+        "title": "Open Note",
+        "icon": "$(open-preview)"
       },
       {
         "command": "dory-notes.newNote",
         "title": "New Note",
-        "icon": "res/add-circle.svg"
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "dory-notes.newFileInFolder",
+        "title": "New File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "dory-notes.rename",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "dory-notes.delete",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "dory-notes.newFolder",
+        "title": "New Folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "dory-notes.newFolderInFolder",
+        "title": "New Folder",
+        "icon": "$(new-folder)"
       }
     ],
     "viewsContainers": {
@@ -80,6 +106,33 @@
           "command": "dory-notes.newNote",
           "when": "view == dory-notes-container",
           "group": "navigation"
+        },
+        {
+          "command": "dory-notes.newFolder",
+          "when": "view == dory-notes-container",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dory-notes.newFileInFolder",
+          "when": "view == dory-notes-container && viewItem == directory",
+          "group": "1_creation@1"
+        },
+        {
+          "command": "dory-notes.newFolderInFolder",
+          "when": "view == dory-notes-container && viewItem == directory",
+          "group": "1_creation@2"
+        },
+        {
+          "command": "dory-notes.rename",
+          "when": "view == dory-notes-container && (viewItem == file || viewItem == directory)",
+          "group": "2_modification@1"
+        },
+        {
+          "command": "dory-notes.delete",
+          "when": "view == dory-notes-container && (viewItem == file || viewItem == directory)",
+          "group": "2_modification@2"
         }
       ]
     }

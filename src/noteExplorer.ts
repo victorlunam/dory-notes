@@ -5,6 +5,8 @@ import * as vscode from 'vscode'
 
 import { Octokit } from '@octokit/rest'
 import * as utils from './lib/utils'
+import { FileSystemProvider } from './providers/FileSystemProvider'
+import { NotesTreeProvider } from './providers/NotesTreeProvider'
 
 export class FileStat implements vscode.FileStat {
   constructor(private fsStat: fs.Stats) {}
@@ -243,6 +245,8 @@ implements vscode.TreeDataProvider<Entry>, vscode.FileSystemProvider {
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     )
+
+    // Only set command for files, not directories
     if (element.type === vscode.FileType.File) {
       treeItem.command = {
         command: 'dory-notes.openNote',
@@ -251,26 +255,40 @@ implements vscode.TreeDataProvider<Entry>, vscode.FileSystemProvider {
       }
       treeItem.contextValue = 'file'
     }
+    else if (element.type === vscode.FileType.Directory) {
+      treeItem.contextValue = 'directory'
+    }
+
+    // Set the label to be just the basename instead of the full path
+    treeItem.label = path.basename(element.uri.fsPath)
+    
     return treeItem
   }
 }
 
 export class NoteExplorer {
-  context: vscode.ExtensionContext
-  octokit: Octokit
+  private context: vscode.ExtensionContext
+  private octokit: Octokit
+  private fileSystemProvider: FileSystemProvider
+  private treeDataProvider: NotesTreeProvider
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context
     this.octokit = new Octokit()
-    const treeDataProvider = new NoteProvider()
+    this.fileSystemProvider = new FileSystemProvider()
+    this.treeDataProvider = new NotesTreeProvider(this.fileSystemProvider)
 
     context.subscriptions.push(
       vscode.window.registerTreeDataProvider(
         'dory-notes-container',
-        treeDataProvider,
+        this.treeDataProvider,
       ),
     )
 
+    this.registerCommands()
+  }
+
+  private registerCommands(): void {
     vscode.commands.registerCommand('dory-notes.openNote', resource =>
       this.openNote(resource))
 
@@ -279,8 +297,33 @@ export class NoteExplorer {
       async () => await this.newNote(),
     )
 
+    vscode.commands.registerCommand(
+      'dory-notes.newFileInFolder',
+      async (folder) => await this.newFileInFolder(folder.uri),
+    )
+
+    vscode.commands.registerCommand(
+      'dory-notes.newFolder',
+      async () => await this.newFolder(),
+    )
+
+    vscode.commands.registerCommand(
+      'dory-notes.newFolderInFolder',
+      async (folder) => await this.newFolderInFolder(folder.uri),
+    )
+
+    vscode.commands.registerCommand(
+      'dory-notes.rename',
+      async (resource) => await this.rename(resource.uri),
+    )
+
+    vscode.commands.registerCommand(
+      'dory-notes.delete',
+      async (resource) => await this.delete(resource),
+    )
+
     vscode.commands.registerCommand('dory-notes.refresh', () =>
-      treeDataProvider.refresh())
+      this.treeDataProvider.refresh())
 
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       // await this.addAndCommit(document);
@@ -295,6 +338,7 @@ export class NoteExplorer {
   private async newNote(): Promise<void> {
     const value = await vscode.window.showInputBox({
       prompt: 'Enter a filename',
+      placeHolder: 'example.md',
     })
 
     if (value === undefined)
@@ -311,7 +355,193 @@ export class NoteExplorer {
     await utils.writefile(filePath.fsPath, Buffer.from(''))
     vscode.window.showTextDocument(filePath)
 
-    vscode.commands.executeCommand('dory-notes.refresh')
+    this.treeDataProvider.refresh()
+  }
+
+  private async newFileInFolder(folderUri: vscode.Uri): Promise<void> {
+    const value = await vscode.window.showInputBox({
+      prompt: 'Enter a filename',
+      placeHolder: 'example.md',
+    })
+
+    if (value === undefined)
+      return
+
+    const filename = value.trim()
+    if (filename.length === 0)
+      return
+
+    const filePath = vscode.Uri.joinPath(folderUri, filename)
+
+    await utils.writefile(filePath.fsPath, Buffer.from(''))
+    vscode.window.showTextDocument(filePath)
+
+    // Refresh and expand the parent directory
+    await this.treeDataProvider.revealAndExpand(folderUri)
+    this.treeDataProvider.refresh()
+  }
+
+  private async newFolder(): Promise<void> {
+    const value = await vscode.window.showInputBox({
+      prompt: 'Enter folder name',
+      placeHolder: 'example-folder',
+    })
+
+    if (value === undefined)
+      return
+
+    const folderName = value.trim()
+    if (folderName.length === 0)
+      return
+
+    const rootPath = await this.context.secrets.get('dory-notes.rootPath')
+    const rootUri = vscode.Uri.file(rootPath!)
+    const folderPath = vscode.Uri.joinPath(rootUri, folderName)
+
+    try {
+      await this.fileSystemProvider.createDirectory(folderPath)
+      this.treeDataProvider.refresh()
+      vscode.window.showInformationMessage(`Folder '${folderName}' has been created`)
+    }
+    catch (error) {
+      if (error instanceof vscode.FileSystemError) {
+        if (error.code === 'FileExists') {
+          vscode.window.showErrorMessage('A folder with that name already exists')
+        }
+        else {
+          vscode.window.showErrorMessage(`Failed to create folder: ${error.message}`)
+        }
+      }
+      else {
+        vscode.window.showErrorMessage(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+  }
+
+  private async newFolderInFolder(parentUri: vscode.Uri): Promise<void> {
+    const value = await vscode.window.showInputBox({
+      prompt: 'Enter folder name',
+      placeHolder: 'example-folder',
+    })
+
+    if (value === undefined)
+      return
+
+    const folderName = value.trim()
+    if (folderName.length === 0)
+      return
+
+    const folderPath = vscode.Uri.joinPath(parentUri, folderName)
+
+    try {
+      await this.fileSystemProvider.createDirectory(folderPath)
+      this.treeDataProvider.refresh()
+      vscode.window.showInformationMessage(`Folder '${folderName}' has been created`)
+    }
+    catch (error) {
+      if (error instanceof vscode.FileSystemError) {
+        if (error.code === 'FileExists') {
+          vscode.window.showErrorMessage('A folder with that name already exists')
+        }
+        else {
+          vscode.window.showErrorMessage(`Failed to create folder: ${error.message}`)
+        }
+      }
+      else {
+        vscode.window.showErrorMessage(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+  }
+
+  private async rename(resource: vscode.Uri): Promise<void> {
+    if (!resource) {
+      vscode.window.showErrorMessage('No file selected')
+      return
+    }
+
+    try {
+      const basename = path.basename(resource.fsPath)
+      const dirname = path.dirname(resource.fsPath)
+      const dotIndex = basename.lastIndexOf('.')
+      
+      const value = await vscode.window.showInputBox({
+        prompt: 'Enter new name',
+        value: basename,
+        valueSelection: dotIndex !== -1 ? [0, dotIndex] : undefined,
+      })
+
+      if (!value || value.trim().length === 0 || value === basename)
+        return
+
+      const newUri = vscode.Uri.file(path.join(dirname, value))
+      await this.fileSystemProvider.rename(resource, newUri, { overwrite: false })
+      
+      this.treeDataProvider.refresh()
+    }
+    catch (error) {
+      if (error instanceof vscode.FileSystemError) {
+        if (error.code === 'FileExists') {
+          vscode.window.showErrorMessage('A file with that name already exists')
+        }
+        else {
+          vscode.window.showErrorMessage(`Failed to rename file: ${error.message}`)
+        }
+      }
+      else {
+        vscode.window.showErrorMessage(`Failed to rename file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+  }
+
+  private async delete(resource: any): Promise<void> {
+    const uri = resource.uri as vscode.Uri
+    if (!uri) {
+      vscode.window.showErrorMessage('Invalid file selected')
+      return
+    }
+
+    try {
+      const basename = path.basename(uri.fsPath)
+      const stat = await this.fileSystemProvider.stat(uri)
+      const isDirectory = stat.type === vscode.FileType.Directory
+
+      const answer = await vscode.window.showWarningMessage(
+        `Are you sure you want to delete ${isDirectory ? 'folder' : 'file'} '${basename}'?`,
+        { modal: true },
+        'Delete'
+      )
+
+      if (answer === 'Delete') {
+        await this.fileSystemProvider.delete(uri, { recursive: isDirectory })
+        
+        // Close any editor tabs that have this file open
+        for (const editor of vscode.window.visibleTextEditors) {
+          if (editor.document.uri.fsPath === uri.fsPath) {
+            await vscode.window.showTextDocument(editor.document, { preview: false, preserveFocus: true })
+            await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+          }
+        }
+        
+        this.treeDataProvider.refresh()
+        vscode.window.showInformationMessage(`${isDirectory ? 'Folder' : 'File'} '${basename}' has been deleted`)
+      }
+    }
+    catch (error) {
+      let errorMessage = 'Failed to delete file'
+      if (error instanceof vscode.FileSystemError) {
+        switch (error.code) {
+          case 'FileNotFound':
+            errorMessage = 'The file no longer exists'
+            break
+          case 'NoPermissions':
+            errorMessage = 'You do not have permission to delete this file'
+            break
+          default:
+            errorMessage = `Failed to delete file: ${error.message}`
+        }
+      }
+      vscode.window.showErrorMessage(errorMessage)
+    }
   }
 
   // private async addAndCommit(document: vscode.TextDocument): Promise<void> {
