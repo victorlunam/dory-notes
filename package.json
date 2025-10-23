@@ -85,7 +85,8 @@
       "dory-notes": [
         {
           "id": "dory-notes-container",
-          "name": "Better ideas 💡"
+          "name": "Better ideas 💡",
+          "icon": "res/dory.svg"
         }
       ]
     },
@@ -135,7 +136,14 @@
           "group": "2_modification@2"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "dory-notes.rename",
+        "key": "F2",
+        "when": "view == dory-notes-container && viewItem && !inputFocus"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",

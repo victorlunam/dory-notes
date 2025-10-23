@@ -5,7 +5,7 @@ import * as vscode from 'vscode'
 
 import { Octokit } from '@octokit/rest'
 import * as utils from './lib/utils'
-import { FileSystemProvider } from './providers/FileSystemProvider'
+import { FileSystemProvider, FileEntry } from './providers/FileSystemProvider'
 import { NotesTreeProvider } from './providers/NotesTreeProvider'
 
 export class FileStat implements vscode.FileStat {
@@ -141,7 +141,7 @@ implements vscode.TreeDataProvider<Entry>, vscode.FileSystemProvider {
   }
 
   readFile(uri: vscode.Uri): Uint8Array | Thenable<Uint8Array> {
-    return utils.readfile(uri.fsPath)
+    return utils.readfile(uri.fsPath).then(buffer => new Uint8Array(buffer))
   }
 
   writeFile(
@@ -271,6 +271,7 @@ export class NoteExplorer {
   private octokit: Octokit
   private fileSystemProvider: FileSystemProvider
   private treeDataProvider: NotesTreeProvider
+  private treeView: vscode.TreeView<FileEntry>
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context
@@ -278,12 +279,12 @@ export class NoteExplorer {
     this.fileSystemProvider = new FileSystemProvider()
     this.treeDataProvider = new NotesTreeProvider(this.fileSystemProvider)
 
-    context.subscriptions.push(
-      vscode.window.registerTreeDataProvider(
-        'dory-notes-container',
-        this.treeDataProvider,
-      ),
-    )
+    this.treeView = vscode.window.createTreeView('dory-notes-container', {
+      treeDataProvider: this.treeDataProvider,
+      showCollapseAll: true
+    })
+
+    context.subscriptions.push(this.treeView)
 
     this.registerCommands()
   }
@@ -314,7 +315,7 @@ export class NoteExplorer {
 
     vscode.commands.registerCommand(
       'dory-notes.rename',
-      async (resource) => await this.rename(resource.uri),
+      async (resource?: any) => await this.rename(resource?.uri),
     )
 
     vscode.commands.registerCommand(
