@@ -15,6 +15,12 @@ export class NotesTreeProvider extends BaseTreeProvider {
   async getChildren(element?: FileEntry): Promise<FileEntry[]> {
     if (element) {
       const children = await this.fileSystemProvider.readDirectory(element.uri)
+      children.sort((a, b) => {
+        if (a[1] === b[1])
+          return a[0].localeCompare(b[0])
+
+        return a[1] === vscode.FileType.Directory ? -1 : 1
+      })
       return children.map(([name, type]) => ({
         uri: vscode.Uri.file(path.join(element.uri.fsPath, name)),
         type,
