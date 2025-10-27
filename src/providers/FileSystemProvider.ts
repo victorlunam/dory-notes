@@ -1,7 +1,7 @@
-import path from 'node:path'
-import fs from 'node:fs'
-import * as vscode from 'vscode'
-import * as utils from '../lib/utils'
+import path from 'node:path';
+import fs from 'node:fs';
+import * as vscode from 'vscode';
+import * as utils from '../lib/utils';
 
 export class FileStat implements vscode.FileStat {
   constructor(private fsStat: fs.Stats) {}
@@ -13,31 +13,31 @@ export class FileStat implements vscode.FileStat {
         ? vscode.FileType.Directory
         : this.fsStat.isSymbolicLink()
           ? vscode.FileType.SymbolicLink
-          : vscode.FileType.Unknown
+          : vscode.FileType.Unknown;
   }
 
   get isFile(): boolean | undefined {
-    return this.fsStat.isFile()
+    return this.fsStat.isFile();
   }
 
   get isDirectory(): boolean | undefined {
-    return this.fsStat.isDirectory()
+    return this.fsStat.isDirectory();
   }
 
   get isSymbolicLink(): boolean | undefined {
-    return this.fsStat.isSymbolicLink()
+    return this.fsStat.isSymbolicLink();
   }
 
   get size(): number {
-    return this.fsStat.size
+    return this.fsStat.size;
   }
 
   get ctime(): number {
-    return this.fsStat.ctime.getTime()
+    return this.fsStat.ctime.getTime();
   }
 
   get mtime(): number {
-    return this.fsStat.mtime.getTime()
+    return this.fsStat.mtime.getTime();
   }
 }
 
@@ -47,14 +47,14 @@ export interface FileEntry {
 }
 
 export class FileSystemProvider implements vscode.FileSystemProvider {
-  private _onDidChangeFile: vscode.EventEmitter<vscode.FileChangeEvent[]>
+  private _onDidChangeFile: vscode.EventEmitter<vscode.FileChangeEvent[]>;
 
   constructor() {
-    this._onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>()
+    this._onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   }
 
   get onDidChangeFile(): vscode.Event<vscode.FileChangeEvent[]> {
-    return this._onDidChangeFile.event
+    return this._onDidChangeFile.event;
   }
 
   watch(
@@ -65,11 +65,11 @@ export class FileSystemProvider implements vscode.FileSystemProvider {
       uri.fsPath,
       { recursive: options.recursive },
       async (event, filename) => {
-        if (filename) {
+        if (filename && typeof filename === 'string') {
           const filepath = path.join(
             uri.fsPath,
-            utils.normalizeNFC(filename.toString()),
-          )
+            utils.normalizeNFC(filename),
+          );
 
           this._onDidChangeFile.fire([
             {
@@ -81,115 +81,90 @@ export class FileSystemProvider implements vscode.FileSystemProvider {
                     : vscode.FileChangeType.Deleted,
               uri: uri.with({ path: filepath }),
             } as vscode.FileChangeEvent,
-          ])
+          ]);
         }
       },
-    )
+    );
 
-    return { dispose: () => watcher.close() }
+    return { dispose: () => watcher.close() };
   }
 
-  stat(uri: vscode.Uri): vscode.FileStat | Thenable<vscode.FileStat> {
-    return this._stat(uri.fsPath)
+  async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
+    return this.getStat(uri.fsPath);
   }
 
-  async _stat(path: string): Promise<vscode.FileStat> {
-    return new FileStat(await utils.stat(path))
-  }
+  async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
+    const children = await utils.readdir(uri.fsPath);
 
-  readDirectory(
-    uri: vscode.Uri,
-  ): [string, vscode.FileType][] | Thenable<[string, vscode.FileType][]> {
-    return this._readDirectory(uri)
-  }
-
-  async _readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
-    const children = await utils.readdir(uri.fsPath)
-
-    const result: [string, vscode.FileType][] = []
+    const result: [string, vscode.FileType][] = [];
     for (let i = 0; i < children.length; i++) {
       if (children[i] === '.git')
-        continue
+        {continue;}
 
-      const child = children[i]
-      const stat = await this._stat(path.join(uri.fsPath, child))
-      result.push([child, stat.type])
+      const child = children[i];
+      const stat = await this.getStat(path.join(uri.fsPath, child));
+      result.push([child, stat.type]);
     }
 
-    return Promise.resolve(result)
+    return Promise.resolve(result);
   }
 
-  createDirectory(uri: vscode.Uri): void | Thenable<void> {
-    return utils.mkdir(uri.fsPath)
+  createDirectory(uri: vscode.Uri): Promise<void> {
+    return utils.mkdir(uri.fsPath);
   }
 
-  readFile(uri: vscode.Uri): Uint8Array | Thenable<Uint8Array> {
-    return utils.readfile(uri.fsPath)
+  readFile(uri: vscode.Uri): Promise<Uint8Array> {
+    return utils.readfile(uri.fsPath).then(buffer => new Uint8Array(buffer));
   }
 
-  writeFile(
-    uri: vscode.Uri,
-    content: Uint8Array,
-    options: { create: boolean; overwrite: boolean },
-  ): void | Thenable<void> {
-    return this._writeFile(uri, content, options)
-  }
-
-  async _writeFile(
+  async writeFile(
     uri: vscode.Uri,
     content: Uint8Array,
     options: { create: boolean; overwrite: boolean },
   ): Promise<void> {
-    const exists = await utils.exists(uri.fsPath)
+    const exists = await utils.exists(uri.fsPath);
     if (!exists) {
       if (!options.create)
-        throw vscode.FileSystemError.FileNotFound()
+        {throw vscode.FileSystemError.FileNotFound();}
 
-      await utils.mkdir(path.dirname(uri.fsPath))
+      await utils.mkdir(path.dirname(uri.fsPath));
     }
     else {
       if (!options.overwrite)
-        throw vscode.FileSystemError.FileExists()
+        {throw vscode.FileSystemError.FileExists();}
     }
 
-    return utils.writefile(uri.fsPath, content as Buffer)
+    return utils.writefile(uri.fsPath, content as Buffer);
   }
 
-  delete(
-    uri: vscode.Uri,
-    options: { recursive: boolean },
-  ): void | Thenable<void> {
+  delete(uri: vscode.Uri, options: { recursive: boolean }): Promise<void> {
     if (options.recursive)
-      return utils.rmrf(uri.fsPath)
+      {return utils.rmrf(uri.fsPath);}
 
-    return utils.unlink(uri.fsPath)
+    return utils.unlink(uri.fsPath);
   }
 
-  rename(
-    oldUri: vscode.Uri,
-    newUri: vscode.Uri,
-    options: { overwrite: boolean },
-  ): void | Thenable<void> {
-    return this._rename(oldUri, newUri, options)
-  }
-
-  async _rename(
+  async rename(
     oldUri: vscode.Uri,
     newUri: vscode.Uri,
     options: { overwrite: boolean },
   ): Promise<void> {
-    const exists = await utils.exists(newUri.fsPath)
+    const exists = await utils.exists(newUri.fsPath);
     if (exists) {
       if (!options.overwrite)
-        throw vscode.FileSystemError.FileExists()
+        {throw vscode.FileSystemError.FileExists();}
       else
-        await utils.rmrf(newUri.fsPath)
+        {await utils.rmrf(newUri.fsPath);}
     }
 
-    const parentExists = await utils.exists(path.dirname(newUri.fsPath))
+    const parentExists = await utils.exists(path.dirname(newUri.fsPath));
     if (!parentExists)
-      await utils.mkdir(path.dirname(newUri.fsPath))
+      {await utils.mkdir(path.dirname(newUri.fsPath));}
 
-    return utils.rename(oldUri.fsPath, newUri.fsPath)
+    return utils.rename(oldUri.fsPath, newUri.fsPath);
+  }
+
+  private async getStat(filePath: string): Promise<vscode.FileStat> {
+    return new FileStat(await utils.stat(filePath));
   }
 } 

@@ -1,79 +1,123 @@
-import os from 'node:os'
-import path from 'node:path'
-import fs from 'node:fs'
-import * as vscode from 'vscode'
+import * as vscode from 'vscode';
+import fs from 'node:fs';
 
-import { Auth } from './auth'
-import { exec } from './lib/exec'
-import { NoteExplorer } from './noteExplorer'
+import { Auth } from './auth';
+import { NoteExplorer } from './noteExplorer';
+import { ConfigService } from './services/ConfigService';
+import { InitializationService } from './services/InitializationService';
+import { RepositoryService } from './services/RepositoryService';
+import { DORY_NOTES_ROOT_PATH } from './constants';
 
 export async function activate(context: vscode.ExtensionContext) {
-  const rootPath = path.join(os.homedir(), '.dory-notes')
-  context.secrets.store('dory-notes.rootPath', rootPath)
+  const authService = new Auth();
+  await authService.initialize(context);
 
-  const authService = new Auth()
-  await authService.initialize(context)
+  const configService = new ConfigService(context);
+  await configService.setRootPath(DORY_NOTES_ROOT_PATH);
 
-  new NoteExplorer(context)
+  const initializationService = new InitializationService(authService, configService);
+  await initializationService.initialize();
 
-  const disposable = vscode.commands.registerCommand(
-    'dory-notes.login',
-    async () => {
-      try {
-        const octokit = await authService.getOctokit()
-        const userInfo = await octokit.users.getAuthenticated()
+  new NoteExplorer(context);
 
-        const isCloned = fs.existsSync(rootPath)
+  const loginDisposable = vscode.commands.registerCommand('dory-notes.login', async () => {
+    await handleLogin(context, authService, configService);
+  });
 
-        if (isCloned) {
-          vscode.window.showInformationMessage(
-            `Welcome back ${userInfo.data.name} to dory notes`,
-          )
+  const syncDisposable = vscode.commands.registerCommand('dory-notes.syncWithGitHub', async () => {
+    await handleSyncWithGitHub(context, authService, configService);
+  });
 
-          return
-        }
+  const chooseLocalDisposable = vscode.commands.registerCommand('dory-notes.chooseLocal', async () => {
+    await configService.setSyncMode('local');
+    await initializationService.initialize();
+  });
 
-        // verify if exists a repository with the name personal-dory-notes
-        // if exists clone it
-        // if not create a new repository and clone it
+  const chooseGitHubDisposable = vscode.commands.registerCommand('dory-notes.chooseGitHub', async () => {
+    const octokit = await authService.getOctokit();
 
-        const exist = await octokit.repos.get({
-          owner: userInfo.data.login,
-          repo: 'personal-dory-notes',
-        })
+    if (!octokit) {
+      vscode.window.showWarningMessage('GitHub authentication cancelled. Please try again or use Local Mode.');
+      return;
+    }
 
-        if (exist.status === 200) {
-          await exec(`git clone ${exist.data.clone_url} ${rootPath}`)
+    await configService.setSyncMode('github');
+    await initializationService.initialize();
+  });
 
-          vscode.window.showInformationMessage(
-            `Welcome ${userInfo.data.name} to dory notes`,
-          )
+  context.subscriptions.push(loginDisposable, syncDisposable, chooseLocalDisposable, chooseGitHubDisposable);
+}
 
-          return
-        }
+async function handleLogin(
+  context: vscode.ExtensionContext,
+  authService: Auth,
+  configService: ConfigService,
+): Promise<void> {
+  try {
+    const octokit = await authService.getOctokit();
 
-        const repo = await octokit.repos.createForAuthenticatedUser({
-          name: 'personal-dory-notes',
-          description: 'A minimalist and versioned notes application for programmers, inspired by Dory from Finding Nemo',
-          private: true,
-          auto_init: true,
-        })
+    if (!octokit) {
+      vscode.window.showWarningMessage('Authentication cancelled. Local repository is available.');
+      return;
+    }
 
-        await exec(`git clone ${repo.data.clone_url} ${rootPath}`)
+    const accessToken = await authService.getAccessToken();
+    const repositoryService = new RepositoryService(octokit, accessToken);
+    const rootPath = await configService.getRootPath();
+    const hasLocal = fs.existsSync(rootPath);
+    const hasRemote = await repositoryService.checkRemoteRepositoryExists();
 
-        vscode.window.showInformationMessage(
-          `Welcome ${userInfo.data.name} to dory notes`,
-        )
-      }
-      catch (error) {
-        vscode.window.showErrorMessage(
-          `Error while trying to login into dory notes: ${error}`,
-        )
-      }
-    },
-  )
+    const result = await repositoryService.handleRepositoryState(rootPath, hasLocal, hasRemote);
 
-  context.subscriptions.push(disposable)
+    if (result.success) {
+      vscode.window.showInformationMessage(result.message);
+    }
+    else {
+      vscode.window.showErrorMessage(result.message);
+    }
+  }
+  catch (error) {
+    vscode.window.showErrorMessage(
+      `Error while trying to login into dory notes: ${error}`,
+    );
+  }
+}
+
+async function handleSyncWithGitHub(
+  context: vscode.ExtensionContext,
+  authService: Auth,
+  configService: ConfigService,
+): Promise<void> {
+  try {
+    const octokit = await authService.getOctokit();
+
+    if (!octokit) {
+      vscode.window.showWarningMessage('Authentication cancelled.');
+      return;
+    }
+
+    await configService.setSyncMode('github');
+
+    const accessToken = await authService.getAccessToken();
+    const repositoryService = new RepositoryService(octokit, accessToken);
+    const rootPath = await configService.getRootPath();
+    const hasLocal = fs.existsSync(rootPath);
+    const hasRemote = await repositoryService.checkRemoteRepositoryExists();
+
+    const result = await repositoryService.handleRepositoryState(rootPath, hasLocal, hasRemote);
+
+    if (result.success) {
+      vscode.window.showInformationMessage('Successfully connected to GitHub!');
+    }
+    else {
+      vscode.window.showErrorMessage(result.message);
+    }
+  }
+  catch (error) {
+    vscode.window.showErrorMessage(
+      `Error while trying to sync with GitHub: ${error}`,
+    );
+  }
 }
 
 export function deactivate() {}

@@ -2,18 +2,23 @@
     "root": true,
     "parser": "@typescript-eslint/parser",
     "parserOptions": {
-        "ecmaVersion": 6,
-        "sourceType": "module"
+        "ecmaVersion": 2022,
+        "sourceType": "module",
+        "project": "./tsconfig.json"
     },
     "plugins": [
         "@typescript-eslint"
+    ],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
     ],
     "rules": {
         "@typescript-eslint/naming-convention": [
             "warn",
             {
                 "selector": "import",
-                "format": [ "camelCase", "PascalCase" ]
+                "format": ["camelCase", "PascalCase"]
             }
         ],
         "@typescript-eslint/semi": "warn",
@@ -25,6 +30,7 @@
     "ignorePatterns": [
         "out",
         "dist",
-        "**/*.d.ts"
+        "**/*.d.ts",
+        "node_modules"
     ]
 }

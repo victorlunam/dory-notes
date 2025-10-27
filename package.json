@@ -2,22 +2,37 @@
   "name": "dory-notes",
   "publisher": "victor-luna",
   "displayName": "Dory Notes",
-  "version": "0.0.2",
+  "version": "0.0.7",
   "description": "A minimalist and versioned notes application for programmers.",
   "author": "Victor Luna <victor.luna.mullisaca@gmail.com>",
   "license": "MIT",
-  "funding": "https://github.com/sponsors/viclunam",
-  "homepage": "https://github.com/viclunam/dory-notes#readme",
+  "funding": "https://github.com/sponsors/victorlunam",
+  "homepage": "https://github.com/victorlunam/dory-notes#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/viclunam/dory-notes.git"
+    "url": "git+https://github.com/victorlunam/dory-notes.git"
   },
   "bugs": {
-    "url": "https://github.com/viclunam/dory-notes/issues"
+    "url": "https://github.com/victorlunam/dory-notes/issues"
   },
   "categories": [
+    "Notebooks",
     "Other"
   ],
+  "keywords": [
+    "notes",
+    "markdown",
+    "git",
+    "versioning",
+    "github",
+    "productivity",
+    "notebook"
+  ],
+  "qna": "https://github.com/victorlunam/dory-notes/issues",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "main": "./out/extension.js",
   "icon": "res/icon.png",
   "engines": {
@@ -25,11 +40,61 @@
   },
   "activationEvents": [],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dory-notes",
+          "title": "Dory Notes",
+          "icon": "res/dory.svg"
+        }
+      ]
+    },
+    "views": {
+      "dory-notes": [
+        {
+          "id": "dory-notes-container",
+          "name": "Better ideas 💡",
+          "icon": "res/dory.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Dory Notes",
+      "properties": {
+        "dory-notes.autoCommitInterval": {
+          "type": "number",
+          "default": 28800000,
+          "description": "Auto-commit interval in milliseconds (default: 8 hours)",
+          "markdownDescription": "Auto-commit interval in milliseconds (default: 8 hours = 28,800,000 ms)"
+        },
+        "dory-notes.syncMode": {
+          "type": "string",
+          "enum": ["local", "github"],
+          "description": "Sync mode for notes: 'local' for local-only, 'github' for GitHub sync",
+          "markdownDescription": "Sync mode for notes: 'local' for local-only, 'github' for GitHub sync"
+        }
+      }
+    },
     "commands": [
       {
         "command": "dory-notes.login",
         "title": "Login",
         "category": "Dory"
+      },
+      {
+        "command": "dory-notes.syncWithGitHub",
+        "title": "Sync with GitHub",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "dory-notes.chooseLocal",
+        "title": "Choose Local Mode",
+        "enablement": "false"
+      },
+      {
+        "command": "dory-notes.chooseGitHub",
+        "title": "Choose GitHub Mode",
+        "enablement": "false"
       },
       {
         "command": "dory-notes.refresh",
@@ -72,46 +137,39 @@
         "icon": "$(new-folder)"
       }
     ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "dory-notes",
-          "title": "Dory Notes",
-          "icon": "res/dory.svg"
-        }
-      ]
-    },
-    "views": {
-      "dory-notes": [
-        {
-          "id": "dory-notes-container",
-          "name": "Better ideas 💡",
-          "icon": "res/dory.svg"
-        }
-      ]
-    },
     "viewsWelcome": [
       {
         "view": "dory-notes-container",
-        "contents": "You haven't taken notes yet, it's time to start jotting down your code ideas! 🚀✨\n[create note](command:dory-notes.newNote)"
+        "contents": "Welcome to Dory Notes! 🐠✨\n\nChoose how you want to sync your notes:\n\n[Use Local Mode](command:dory-notes.chooseLocal) - Store notes locally only\n[Connect with GitHub](command:dory-notes.chooseGitHub) - Sync notes to GitHub",
+        "when": "config:dory-notes.syncMode == '' || !config:dory-notes.syncMode"
+      },
+      {
+        "view": "dory-notes-container",
+        "contents": "You haven't taken notes yet, it's time to start jotting down your code ideas! 🚀✨\n[create note](command:dory-notes.newNote)",
+        "when": "config:dory-notes.syncMode != '' && config:dory-notes.syncMode"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "dory-notes.syncWithGitHub",
+          "when": "view == dory-notes-container",
+          "group": "navigation@1"
+        },
+        {
           "command": "dory-notes.refresh",
           "when": "view == dory-notes-container",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "dory-notes.newNote",
           "when": "view == dory-notes-container",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
           "command": "dory-notes.newFolder",
           "when": "view == dory-notes-container",
-          "group": "navigation"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -149,29 +207,25 @@
     "vscode:prepublish": "npm run esbuild-base -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "build": "npm run -S esbuild-base -- --sourcemap",
-    "build:extension": "vsce package",
+    "build:extension": "npm run build && vsce package",
     "watch": "npm run -S esbuild-base -- --sourcemap --watch",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "test": "eslint src --ext ts && tsc --noEmit"
+    "lint": "eslint . --ext ts,tsx",
+    "lint:fix": "eslint . --ext ts,tsx --fix",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@octokit/rest": "^20.0.2",
-    "mkdirp": "^3.0.1",
-    "rimraf": "^5.0.5"
+    "@octokit/rest": "^20.0.2"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^2.6.3",
-    "@types/mocha": "^10.0.6",
     "@types/node": "18.x",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
-    "@vscode/test-cli": "^0.0.4",
-    "@vscode/test-electron": "^2.3.8",
     "esbuild": "^0.19.11",
     "eslint": "^8.56.0",
     "eslint-ts-patch": "^8.56.0-0",
+    "ovsx": "^0.10.6",
     "typescript": "^5.3.3",
     "vsce": "^2.15.0"
   }
